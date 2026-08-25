@@ -9,7 +9,8 @@
  *   - fechas en aaaa-mm-dd (la doc decía dd/mm/aaaa, pero lo que funciona es ISO)
  *   - alias de campos (ClienteCodigo, Productos, Cantidad, ...)
  *   - subtipo del Excel o PTOVTA-FV cuando la columna no existe/esta vacia
- *   - todo pago TC/TD usa PuntoVentaItemsTarjeta con cuenta 13100
+ *   - todo pago TC/TD usa PuntoVentaItemsTarjeta y la cuenta depende de la tarjeta
+ *   - TRANSFDEP usa PuntoVentaItemsBanco para transferencias de terceros
  *   - los demas pagos usan PuntoVentaItemsOtros contra la cuenta TCV
  *   - Conceptos se genera segun PORCENTAJE (21% o 10,5%); 0% es exento
  *   - totales como strings
@@ -32,7 +33,12 @@ const CONFIG = {
   // Regla de tarjeta informada por el circuito de punto de venta.
   TARJETA: {
     CONDICION_PAGO: 'TC/TD',
-    CUENTA: '13100',
+    CUENTA_DEFAULT: '13100',
+    CUENTAS_POR_COMPROBANTE_ADICIONAL: {
+      '9510 AMERICAN EXPRESS': '13103',
+      '9520 VISA': '13100',
+      '9530 MASTERCARD': '13102',
+    },
   },
   EFECTIVO: {
     CONDICION_PAGO: 'CONTADO',
@@ -40,6 +46,12 @@ const CONFIG = {
       PES: '10000',
       DOL: '10010',
     },
+  },
+  BANCO: {
+    CONDICION_PAGO: 'TRANSFDEP',
+    OPERACION_BANCARIA: 'TRANSFERENCIATER',
+    MONEDA_COBRO: 'PES',
+    CUENTA: '11000',
   },
   CONDICION_CUENTA_CORRIENTE: 'CTACTE',
   CONCEPTOS_POR_TASA: {
@@ -101,8 +113,20 @@ function esPagoTarjeta(row) {
   return normalizeCode(row.CONDICIONPAGO) === CONFIG.TARJETA.CONDICION_PAGO;
 }
 
+function cuentaTarjeta(row) {
+  const comprobanteAdicional = normalizeCode(row.COMPROBANTEADICIONAL);
+  return (
+    CONFIG.TARJETA.CUENTAS_POR_COMPROBANTE_ADICIONAL[comprobanteAdicional] ??
+    CONFIG.TARJETA.CUENTA_DEFAULT
+  );
+}
+
 function esPagoContado(row) {
   return normalizeCode(row.CONDICIONPAGO) === CONFIG.EFECTIVO.CONDICION_PAGO;
+}
+
+function esPagoBanco(row) {
+  return normalizeCode(row.CONDICIONPAGO) === CONFIG.BANCO.CONDICION_PAGO;
 }
 
 function esCuentaCorriente(row) {
@@ -122,8 +146,10 @@ function toNumericCode(value) {
   return digits.replace(/^0+(?=\d)/, '');
 }
 
-const round2 = (n) => Math.round(n * 100) / 100;
-const round4 = (n) => Math.round(n * 10000) / 10000;
+const round2 = (n) => {
+  const signo = n < 0 ? -1 : 1;
+  return signo * (Math.round((Math.abs(n) + Number.EPSILON) * 100) / 100);
+};
 
 /** Convierte "21%" o "10,5%" a una tasa numerica. */
 function toTaxRate(value) {
@@ -177,8 +203,8 @@ function buildConceptos(filas, comprobante) {
     conceptos.push({
       ConceptoCodigo: config.codigo,
       ImporteEditable: false,
-      ConceptoImporte: round4(acumulado.importe),
-      ConceptoImporteGravado: round4(acumulado.gravado),
+      ConceptoImporte: round2(acumulado.importe),
+      ConceptoImporteGravado: round2(acumulado.gravado),
       TasaImpositiva: config.tasa,
     });
 
@@ -186,8 +212,8 @@ function buildConceptos(filas, comprobante) {
       conceptos.push({
         ConceptoCodigo: CONFIG.CONCEPTO_IVA_21_DOCUMENTO_T,
         ImporteEditable: false,
-        ConceptoImporte: round4(acumulado.reintegro),
-        ConceptoImporteGravado: round4(acumulado.gravado),
+        ConceptoImporte: round2(acumulado.reintegro),
+        ConceptoImporteGravado: round2(acumulado.gravado),
         TasaImpositiva: config.tasa,
       });
     }
@@ -263,7 +289,9 @@ function buildPedidos(rows, defaults = {}) {
     const moneda = toStringOrNull(head.MONEDA);
     const condicionPago = toStringOrNull(head.CONDICIONPAGO);
     const pagoTarjeta = esPagoTarjeta(head);
+    const cuentaPagoTarjeta = cuentaTarjeta(head);
     const pagoContado = esPagoContado(head);
+    const pagoBanco = esPagoBanco(head);
     const cuentaCorriente = esCuentaCorriente(head);
     const tipoComprobante = tipoComprobanteCodigo(head);
     const fechaPago = toIsoDate(head.FECHA);
@@ -314,12 +342,16 @@ function buildPedidos(rows, defaults = {}) {
               CONFIG.SUBTIPO_DEFAULT,
       Descripcion: toStringOrNull(head.DESCRIPCION),
       NumeroComprobante: comprobante,
-      EmpresaCodigo: CONFIG.EMPRESA_CODIGO,
+      EmpresaCodigo:
+        toStringOrNull(defaults.empresaId) ??
+        toStringOrNull(head.SUCURSAL) ??
+        CONFIG.EMPRESA_CODIGO,
       VendedorCodigo: CONFIG.VENDEDOR_DEFAULT,
       Productos: filas.map(({ row }) => {
         const cantidad = toNumberOrNull(row.CANTIDAD);
         const precioOriginal = toNumberOrNull(row.PRECIO);
-        const precio = notaCredito && precioOriginal != null ? Math.abs(precioOriginal) : precioOriginal;
+        const precioRedondeado = precioOriginal != null ? round2(precioOriginal) : null;
+        const precio = notaCredito && precioRedondeado != null ? Math.abs(precioRedondeado) : precioRedondeado;
         const tasa = toTaxRate(row.PORCENTAJE);
         const importeOriginal =
           precioOriginal != null && cantidad != null ? round2(precioOriginal * cantidad) : null;
@@ -336,17 +368,30 @@ function buildPedidos(rows, defaults = {}) {
         };
       }),
       Conceptos: conceptos,
+      PuntoVentaItemsBanco: pagoBanco
+        ? [
+            {
+              OperacionBancariaCodigo: CONFIG.BANCO.OPERACION_BANCARIA,
+              ImporteACobrar: total.toFixed(2),
+              MonedaCobroCodigo: CONFIG.BANCO.MONEDA_COBRO,
+              NroCheque: toNumericCode(comprobante),
+              FechaVencimientoCheque: fechaPago,
+              FechaCheque: fechaPago,
+              Cuenta: CONFIG.BANCO.CUENTA,
+            },
+          ]
+        : null,
       PuntoVentaItemsTarjeta: pagoTarjeta
         ? [
             {
               OperacionBancariaCodigo: condicionPago,
-              CuentaCodigo: CONFIG.TARJETA.CUENTA,
+              CuentaCodigo: cuentaPagoTarjeta,
               Descripcion: toStringOrNull(head.COMPROBANTEADICIONAL),
               FechaCupon: fechaPago,
               FechaVencimientoTarjeta: fechaPago,
               DocumentoTitular: toStringOrNull(head.CLIENTE),
               NroCupon: toNumericCode(comprobante),
-              ImporteACobrar: total.toFixed(4),
+              ImporteACobrar: total.toFixed(2),
               MonedaCobroCodigo: moneda,
             },
           ]
@@ -354,19 +399,19 @@ function buildPedidos(rows, defaults = {}) {
       PuntoVentaItemsEfectivo: pagoContado
         ? [
             {
-              ImporteACobrar: total.toFixed(4),
+              ImporteACobrar: total.toFixed(2),
               MonedaCobroCodigo: moneda,
               CuentaCodigo: cuentaEfectivo,
             },
           ]
         : null,
-      PuntoVentaItemsOtros: pagoTarjeta || pagoContado || cuentaCorriente
+      PuntoVentaItemsOtros: pagoTarjeta || pagoContado || pagoBanco || cuentaCorriente
         ? null
         : [
             {
               CuentaCodigo: CONFIG.CUENTA_PAGO_OTROS,
               DebeHaber: 1,
-              ImporteACobrar: total,
+              ImporteACobrar: total.toFixed(2),
               MonedaCobroCodigo: moneda,
             },
           ],
@@ -378,7 +423,7 @@ function buildPedidos(rows, defaults = {}) {
       TotalBruto: totalBruto.toFixed(2),
       TotalConceptos: totalConceptos.toFixed(2),
       Total: total.toFixed(2),
-      TotalRetenciones: '0',
+      TotalRetenciones: '0.00',
       TotalPagos: total.toFixed(2),
     });
 
