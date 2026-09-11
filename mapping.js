@@ -151,6 +151,12 @@ const round2 = (n) => {
   return signo * (Math.round((Math.abs(n) + Number.EPSILON) * 100) / 100);
 };
 
+/** En notas de credito invierte el signo informado por el Excel. */
+function ajustarImporteNotaCredito(valor, notaCredito) {
+  if (valor == null || !notaCredito) return valor;
+  return round2(valor * -1);
+}
+
 /** Convierte "21%" o "10,5%" a una tasa numerica. */
 function toTaxRate(value) {
   const str = toStringOrNull(value);
@@ -313,13 +319,13 @@ function buildPedidos(rows, defaults = {}) {
     const conceptos = notaCredito
       ? conceptosConSigno.map((concepto) => ({
           ...concepto,
-          ConceptoImporte: Math.abs(concepto.ConceptoImporte),
-          ConceptoImporteGravado: Math.abs(concepto.ConceptoImporteGravado),
+          ConceptoImporte: ajustarImporteNotaCredito(concepto.ConceptoImporte, true),
+          ConceptoImporteGravado: ajustarImporteNotaCredito(concepto.ConceptoImporteGravado, true),
         }))
       : conceptosConSigno;
-    const totalBruto = notaCredito ? Math.abs(totalBrutoConSigno) : totalBrutoConSigno;
-    const totalConceptos = notaCredito ? Math.abs(totalConceptosConSigno) : totalConceptosConSigno;
-    const total = notaCredito ? Math.abs(totalConSigno) : totalConSigno;
+    const totalBruto = ajustarImporteNotaCredito(totalBrutoConSigno, notaCredito);
+    const totalConceptos = ajustarImporteNotaCredito(totalConceptosConSigno, notaCredito);
+    const total = ajustarImporteNotaCredito(totalConSigno, notaCredito);
 
     const payload = cleanObject({
       IdentificacionExterna: comprobante ?? `PV-${numero}`,
@@ -351,11 +357,11 @@ function buildPedidos(rows, defaults = {}) {
         const cantidad = toNumberOrNull(row.CANTIDAD);
         const precioOriginal = toNumberOrNull(row.PRECIO);
         const precioRedondeado = precioOriginal != null ? round2(precioOriginal) : null;
-        const precio = notaCredito && precioRedondeado != null ? Math.abs(precioRedondeado) : precioRedondeado;
+        const precio = ajustarImporteNotaCredito(precioRedondeado, notaCredito);
         const tasa = toTaxRate(row.PORCENTAJE);
         const importeOriginal =
           precioOriginal != null && cantidad != null ? round2(precioOriginal * cantidad) : null;
-        const importe = notaCredito && importeOriginal != null ? Math.abs(importeOriginal) : importeOriginal;
+        const importe = ajustarImporteNotaCredito(importeOriginal, notaCredito);
         return {
           ProductoCodigo: toStringOrNull(row.PRODUCTO),
           Precio: precio,
