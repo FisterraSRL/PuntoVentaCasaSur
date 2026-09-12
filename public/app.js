@@ -10,6 +10,7 @@ const sendProgress = $('sendProgress');
 
 let archivo = null;
 let pedidos = [];
+const TAMANO_LOTE = 40;
 
 // ---------- Selector de empresas ----------
 
@@ -148,59 +149,73 @@ btnSend.addEventListener('click', async () => {
   $('sendError').textContent = '';
   seleccion.forEach((i) => setEstado(i, 'pending', 'Enviando…'));
 
+  let ok = 0;
+  let procesados = 0;
+  const procesadosIndices = new Set();
+  const resultados = [];
+
   try {
-    const res = await fetch('/api/enviar', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/x-ndjson',
-      },
-      body: JSON.stringify({ pedidos: seleccion.map((i) => pedidos[i]) }),
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || `Error HTTP ${res.status}`);
-    }
+    for (let inicio = 0; inicio < seleccion.length; inicio += TAMANO_LOTE) {
+      const lote = seleccion.slice(inicio, inicio + TAMANO_LOTE);
+      const numeroLote = Math.floor(inicio / TAMANO_LOTE) + 1;
+      const totalLotes = Math.ceil(seleccion.length / TAMANO_LOTE);
 
-    if (!res.body) throw new Error('El navegador no pudo leer el progreso del envío.');
-
-    let ok = 0;
-    let procesados = 0;
-    const resultados = [];
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    const procesarLinea = (linea) => {
-      if (!linea.trim()) return;
-      const evento = JSON.parse(linea);
-      if (evento.tipo !== 'resultado') return;
-
-      const r = evento.resultado;
-      const i = seleccion[evento.indice];
-      resultados.push(r);
-      procesados++;
-      if (r.ok) {
-        ok++;
-        setEstado(i, 'ok', `Enviado (${r.status})`);
-      } else {
-        setEstado(i, 'err', `Error (${r.status || 'red'})`, r.respuesta);
+      const res = await fetch('/api/enviar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/x-ndjson',
+        },
+        body: JSON.stringify({ pedidos: lote.map((i) => pedidos[i]) }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(`Falló el lote ${numeroLote} de ${totalLotes}: ${data.error || `Error HTTP ${res.status}`}`);
       }
-      sendProgress.textContent = `${ok} de ${seleccion.length} ingresados OK`;
-    };
 
-    while (true) {
-      const { value, done } = await reader.read();
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      const lineas = buffer.split('\n');
-      buffer = lineas.pop() || '';
-      lineas.forEach(procesarLinea);
-      if (done) break;
-    }
-    procesarLinea(buffer);
+      if (!res.body) throw new Error('El navegador no pudo leer el progreso del envío.');
 
-    if (procesados !== seleccion.length) {
-      throw new Error(`El envío se interrumpió después de procesar ${procesados} de ${seleccion.length} puntos de venta.`);
+      let procesadosLote = 0;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      const procesarLinea = (linea) => {
+        if (!linea.trim()) return;
+        const evento = JSON.parse(linea);
+        if (evento.tipo !== 'resultado') return;
+
+        const r = evento.resultado;
+        const i = lote[evento.indice];
+        resultados.push(r);
+        procesados++;
+        procesadosLote++;
+        procesadosIndices.add(i);
+        if (r.ok) {
+          ok++;
+          setEstado(i, 'ok', `Enviado (${r.status})`);
+        } else {
+          setEstado(i, 'err', `Error (${r.status || 'red'})`, r.respuesta);
+        }
+        sendProgress.textContent = `${ok} de ${seleccion.length} ingresados OK`;
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const lineas = buffer.split('\n');
+        buffer = lineas.pop() || '';
+        lineas.forEach(procesarLinea);
+        if (done) break;
+      }
+      procesarLinea(buffer);
+
+      if (procesadosLote !== lote.length) {
+        throw new Error(
+          `El lote ${numeroLote} de ${totalLotes} se interrumpió después de procesar ` +
+          `${procesadosLote} de ${lote.length} registros. Avance total: ${procesados} de ${seleccion.length}.`
+        );
+      }
     }
 
     const fallidos = resultados.length - ok;
@@ -211,7 +226,9 @@ btnSend.addEventListener('click', async () => {
     $('card-result').scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
     $('sendError').textContent = err.message;
-    seleccion.forEach((i) => setEstado(i, 'pending', 'Pendiente'));
+    seleccion
+      .filter((i) => !procesadosIndices.has(i))
+      .forEach((i) => setEstado(i, 'pending', 'Pendiente'));
   } finally {
     btnSend.disabled = false;
     spinner.classList.add('hidden');
