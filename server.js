@@ -72,6 +72,7 @@ app.post('/api/parse', upload.single('archivo'), (req, res) => {
 /** Envía los pedidos (payloads ya construidos) a Finnegans, uno por uno. */
 app.post('/api/enviar', async (req, res) => {
   const { pedidos } = req.body || {};
+  const transmitirProgreso = req.get('accept')?.includes('application/x-ndjson');
   if (!Array.isArray(pedidos) || !pedidos.length) {
     return res.status(400).json({ error: 'No hay pedidos para enviar.' });
   }
@@ -83,8 +84,16 @@ app.post('/api/enviar', async (req, res) => {
     return res.status(502).json({ error: err.message });
   }
 
+  if (transmitirProgreso) {
+    res.status(200);
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+  }
+
   const resultados = [];
-  for (const pedido of pedidos) {
+  for (const [indice, pedido] of pedidos.entries()) {
     const resultado = { numero: pedido.numero, comprobante: pedido.comprobante };
     try {
       const response = await fetch(`${PUNTO_VENTA_URL}?ACCESS_TOKEN=${encodeURIComponent(token)}`, {
@@ -108,9 +117,16 @@ app.post('/api/enviar', async (req, res) => {
       resultado.respuesta = `Error de red: ${err.message}`;
     }
     resultados.push(resultado);
+    if (transmitirProgreso) {
+      res.write(`${JSON.stringify({ tipo: 'resultado', indice, resultado })}\n`);
+    }
   }
 
-  res.json({ resultados });
+  if (transmitirProgreso) {
+    res.end(`${JSON.stringify({ tipo: 'fin', total: resultados.length })}\n`);
+  } else {
+    res.json({ resultados });
+  }
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true }));

@@ -6,6 +6,7 @@ const dzFile = $('dzFile');
 const btnParse = $('btnParse');
 const btnSend = $('btnSend');
 const spinner = $('spinner');
+const sendProgress = $('sendProgress');
 
 let archivo = null;
 let pedidos = [];
@@ -107,6 +108,8 @@ function renderPreview(data) {
   $('card-preview').classList.remove('hidden');
   $('card-result').classList.add('hidden');
   $('sendError').textContent = '';
+  sendProgress.textContent = '';
+  sendProgress.classList.add('hidden');
   $('card-preview').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -140,30 +143,67 @@ btnSend.addEventListener('click', async () => {
 
   btnSend.disabled = true;
   spinner.classList.remove('hidden');
+  sendProgress.textContent = `0 de ${seleccion.length} ingresados OK`;
+  sendProgress.classList.remove('hidden');
   $('sendError').textContent = '';
   seleccion.forEach((i) => setEstado(i, 'pending', 'Enviando…'));
 
   try {
     const res = await fetch('/api/enviar', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/x-ndjson',
+      },
       body: JSON.stringify({ pedidos: seleccion.map((i) => pedidos[i]) }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `Error HTTP ${res.status}`);
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || `Error HTTP ${res.status}`);
+    }
+
+    if (!res.body) throw new Error('El navegador no pudo leer el progreso del envío.');
 
     let ok = 0;
-    data.resultados.forEach((r, idx) => {
-      const i = seleccion[idx];
+    let procesados = 0;
+    const resultados = [];
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    const procesarLinea = (linea) => {
+      if (!linea.trim()) return;
+      const evento = JSON.parse(linea);
+      if (evento.tipo !== 'resultado') return;
+
+      const r = evento.resultado;
+      const i = seleccion[evento.indice];
+      resultados.push(r);
+      procesados++;
       if (r.ok) {
         ok++;
         setEstado(i, 'ok', `Enviado (${r.status})`);
       } else {
         setEstado(i, 'err', `Error (${r.status || 'red'})`, r.respuesta);
       }
-    });
+      sendProgress.textContent = `${ok} de ${seleccion.length} ingresados OK`;
+    };
 
-    const fallidos = data.resultados.length - ok;
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lineas = buffer.split('\n');
+      buffer = lineas.pop() || '';
+      lineas.forEach(procesarLinea);
+      if (done) break;
+    }
+    procesarLinea(buffer);
+
+    if (procesados !== seleccion.length) {
+      throw new Error(`El envío se interrumpió después de procesar ${procesados} de ${seleccion.length} puntos de venta.`);
+    }
+
+    const fallidos = resultados.length - ok;
     $('resultSummary').innerHTML =
       `<strong>${ok}</strong> punto(s) de venta enviados correctamente` +
       (fallidos ? `, <strong>${fallidos}</strong> con error. Hacé clic en el estado rojo para ver el detalle.` : '.');

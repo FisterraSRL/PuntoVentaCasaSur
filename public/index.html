@@ -18,7 +18,7 @@
           <p>Carga de Puntos de Venta a Finnegans GO</p>
         </div>
       </div>
-      <span class="version-badge" aria-label="Versión de la aplicación">Versión 1.1.1</span>
+      <span class="version-badge" aria-label="Versión de la aplicación">Versión 1.1.2</span>
     </div>
   </header>
 
@@ -76,6 +76,7 @@
       </div>
       <div class="actions">
         <button class="btn btn-primary" id="btnSend">Enviar seleccionados a Finnegans</button>
+        <span class="send-progress hidden" id="sendProgress" role="status" aria-live="polite"></span>
         <span class="spinner hidden" id="spinner"></span>
       </div>
       <p class="error" id="sendError"></p>

@@ -13,7 +13,7 @@ Abrí `http://localhost:4600` en el navegador:
 
 1. **Seleccionar archivo** — arrastrá o elegí el `.xlsx`. Opcionalmente seleccioná una empresa, que tendrá prioridad sobre la columna `SUCURSAL`, y un `TransaccionSubtipoID` por defecto.
 2. **Vista previa** — el archivo se agrupa por `NUMERO`: cada grupo es un punto de venta y cada fila un ítem. Con "Ver JSON" podés inspeccionar el payload exacto antes de enviar. Destildá los que no quieras mandar.
-3. **Enviar** — envía los seleccionados uno por uno. Cada fila muestra su estado (verde = creado, rojo = error; clic en el estado rojo muestra la respuesta completa de Finnegans).
+3. **Enviar** — envía los seleccionados uno por uno y muestra en tiempo real cuántos ingresaron correctamente (por ejemplo, `2 de 627 ingresados OK`). Cada fila muestra su estado (verde = creado, rojo = error; clic en el estado rojo muestra la respuesta completa de Finnegans).
 
 ## Formato del Excel
 
