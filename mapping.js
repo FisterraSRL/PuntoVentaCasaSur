@@ -215,10 +215,15 @@ function buildConceptos(filas, comprobante) {
     });
 
     if (config.tasa === 21 && comprobanteT) {
+      // Finnegans resta este concepto internamente. Enviarlo con signo opuesto
+      // provoca una doble negacion (IVA - (-reintegro)) y duplica el impuesto.
+      const referenciaSigno = acumulado.importe || acumulado.gravado;
+      const reintegroMismoSigno =
+        (referenciaSigno < 0 ? -1 : 1) * Math.abs(acumulado.reintegro);
       conceptos.push({
         ConceptoCodigo: CONFIG.CONCEPTO_IVA_21_DOCUMENTO_T,
         ImporteEditable: false,
-        ConceptoImporte: round2(acumulado.reintegro),
+        ConceptoImporte: round2(reintegroMismoSigno),
         ConceptoImporteGravado: round2(acumulado.gravado),
         TasaImpositiva: config.tasa,
       });
@@ -313,7 +318,14 @@ function buildPedidos(rows, defaults = {}) {
     );
     const conceptosConSigno = buildConceptos(filas, comprobante);
     const totalConceptosConSigno = round2(
-      conceptosConSigno.reduce((sum, concepto) => sum + concepto.ConceptoImporte, 0)
+      conceptosConSigno.reduce(
+        (sum, concepto) =>
+          sum +
+          (concepto.ConceptoCodigo === CONFIG.CONCEPTO_IVA_21_DOCUMENTO_T
+            ? -concepto.ConceptoImporte
+            : concepto.ConceptoImporte),
+        0
+      )
     );
     const totalConSigno = round2(totalBrutoConSigno + totalConceptosConSigno);
     const conceptos = notaCredito
