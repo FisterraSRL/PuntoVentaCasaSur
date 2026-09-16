@@ -299,16 +299,18 @@ function buildPedidos(rows, defaults = {}) {
     const comprobante = toStringOrNull(head.COMPROBANTE);
     const moneda = toStringOrNull(head.MONEDA);
     const condicionPago = toStringOrNull(head.CONDICIONPAGO);
-    const pagoTarjeta = esPagoTarjeta(head);
-    const cuentaPagoTarjeta = cuentaTarjeta(head);
-    const pagoContado = esPagoContado(head);
-    const pagoBanco = esPagoBanco(head);
-    const cuentaCorriente = esCuentaCorriente(head);
     const tipoComprobante = tipoComprobanteCodigo(head);
+    const notaCredito = tipoComprobante === 'NC';
+    // Las notas de credito no informan cobranza, independientemente de la
+    // condicion de pago indicada en el Excel (mismo criterio que CTACTE).
+    const pagoTarjeta = !notaCredito && esPagoTarjeta(head);
+    const cuentaPagoTarjeta = cuentaTarjeta(head);
+    const pagoContado = !notaCredito && esPagoContado(head);
+    const pagoBanco = !notaCredito && esPagoBanco(head);
+    const cuentaCorriente = notaCredito || esCuentaCorriente(head);
     const fechaPago = toIsoDate(head.FECHA);
     const cuentaEfectivo = CONFIG.EFECTIVO.CUENTAS_POR_MONEDA[normalizeCode(moneda)] ?? null;
 
-    const notaCredito = tipoComprobante === 'NC';
     const totalBrutoConSigno = round2(
       filas.reduce((sum, { row }) => {
         const cant = toNumberOrNull(row.CANTIDAD) ?? 0;
@@ -448,6 +450,7 @@ function buildPedidos(rows, defaults = {}) {
     pedidos.push({
       numero,
       comprobante,
+      tipoComprobante,
       cliente: toStringOrNull(head.CLIENTE),
       descripcion: toStringOrNull(head.DESCRIPCION),
       fecha: toIsoDate(head.FECHA),

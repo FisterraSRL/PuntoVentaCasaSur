@@ -93,6 +93,7 @@ function renderPreview(data) {
       <td><input type="checkbox" class="chk" data-i="${i}" checked /></td>
       <td>${escapeHtml(p.numero)}</td>
       <td>${escapeHtml(p.comprobante ?? '—')}</td>
+      <td>${escapeHtml(p.tipoComprobante ?? '—')}</td>
       <td>${escapeHtml(p.cliente ?? '—')}</td>
       <td>${escapeHtml(p.fecha ?? '—')}</td>
       <td class="num">${p.items}</td>
