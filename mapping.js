@@ -25,9 +25,11 @@ const CONFIG = {
   // Subtipo del circuito de punto de venta (sobreescribible desde la UI)
   SUBTIPO_DEFAULT: 'PTOVTA-FV',
   SUBTIPO_NOTA_CREDITO_DEFAULT: 'PTOVTA-NC',
-  // Tipo impositivo según la letra del comprobante (B-00003-... → B).
-  // Letras sin entrada (ej: T) hacen que el campo se omita (es opcional).
-  TIPO_IMPOSITIVO_POR_LETRA: { A: '001', B: '006' },
+  // Tipo impositivo según TIPO COMPROBANTE y la primera letra de COMPROBANTE.
+  TIPO_IMPOSITIVO_POR_TIPO_Y_LETRA: {
+    FC: { A: '001', B: '006', T: '195' },
+    NC: { A: '003', B: '008', T: '197' },
+  },
   // Cuenta puente para el cobro con tarjeta (PuntoVentaItemsOtros)
   CUENTA_PAGO_OTROS: 'TCV',
   // Regla de tarjeta informada por el circuito de punto de venta.
@@ -271,11 +273,11 @@ function parseRows(buffer) {
   });
 }
 
-/** Tipo impositivo a partir de la letra del comprobante ("B-00003-..." → "006"). */
-function tipoImpositivoDeComprobante(comprobante) {
-  if (!comprobante) return null;
+/** Tipo impositivo a partir del tipo y la letra del comprobante. */
+function tipoImpositivoDeComprobante(tipoComprobante, comprobante) {
+  if (!tipoComprobante || !comprobante) return null;
   const letra = String(comprobante).trim().charAt(0).toUpperCase();
-  return CONFIG.TIPO_IMPOSITIVO_POR_LETRA[letra] ?? null;
+  return CONFIG.TIPO_IMPOSITIVO_POR_TIPO_Y_LETRA[tipoComprobante]?.[letra] ?? null;
 }
 
 /**
@@ -349,7 +351,7 @@ function buildPedidos(rows, defaults = {}) {
       ClienteCodigo: toStringOrNull(head.CLIENTE),
       CondicionPagoCodigo: condicionPago,
       MonedaCodigo: moneda,
-      ComprobanteTipoImpositivoID: tipoImpositivoDeComprobante(comprobante),
+      ComprobanteTipoImpositivoID: tipoImpositivoDeComprobante(tipoComprobante, comprobante),
       TransaccionTipoCodigo: CONFIG.TRANSACCION_TIPO,
       WorkflowCodigo: toStringOrNull(head.WORKFLOW),
       TransaccionSubtipoCodigo:

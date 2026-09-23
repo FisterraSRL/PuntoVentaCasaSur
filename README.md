@@ -37,6 +37,7 @@ Una fila por ítem. Filas con el mismo `NUMERO` forman un mismo punto de venta. 
 
 Además el payload incluye automáticamente (según JSON validado contra el tenant):
 
+- `ComprobanteTipoImpositivoID` se determina combinando `TIPO COMPROBANTE` con la primera letra de `COMPROBANTE`: para `FC`, `A` usa `001`, `B` usa `006` y `T` usa `195`; para `NC`, `A` usa `003`, `B` usa `008` y `T` usa `197`.
 - `TransaccionTipoCodigo: OPER` y `WorkflowCodigo` tomado de la columna `WORKFLOW` del Excel.
 - `Conceptos` agrupa por alícuota los importes de `IVA` y las bases gravadas (`PRECIO` × `CANTIDAD`). Las filas con 0% no generan conceptos y se informan como importes exentos.
 - Para alícuota 21%, todos los comprobantes generan `VENTA_IVA 21`. Si `COMPROBANTE` comienza con `T`, además se genera `VENTA_IVA21_T` usando el importe de `REINTEGRO` del Excel con el mismo signo que el IVA. Finnegans resta internamente este concepto, por lo que `TotalConceptos` se calcula como IVA menos reintegro.
