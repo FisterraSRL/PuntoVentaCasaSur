@@ -172,7 +172,7 @@ function conceptoConfigPorTasa(rate) {
   return CONFIG.CONCEPTOS_POR_TASA[String(rate)] ?? null;
 }
 
-function buildConceptos(filas, comprobante) {
+function buildConceptos(filas, comprobante, tipoComprobante) {
   const acumulados = new Map();
 
   for (const { row, excelRow } of filas) {
@@ -217,15 +217,18 @@ function buildConceptos(filas, comprobante) {
     });
 
     if (config.tasa === 21 && comprobanteT) {
-      // Finnegans resta este concepto internamente. Enviarlo con signo opuesto
-      // provoca una doble negacion (IVA - (-reintegro)) y duplica el impuesto.
+      // En las facturas T se respetan exactamente los signos del Excel.
+      // Las notas de credito T conservan su tratamiento historico: antes de
+      // invertir la NC, el reintegro usa el mismo signo que el IVA.
       const referenciaSigno = acumulado.importe || acumulado.gravado;
-      const reintegroMismoSigno =
-        (referenciaSigno < 0 ? -1 : 1) * Math.abs(acumulado.reintegro);
+      const reintegroConcepto =
+        tipoComprobante === 'FC'
+          ? acumulado.reintegro
+          : (referenciaSigno < 0 ? -1 : 1) * Math.abs(acumulado.reintegro);
       conceptos.push({
         ConceptoCodigo: CONFIG.CONCEPTO_IVA_21_DOCUMENTO_T,
         ImporteEditable: false,
-        ConceptoImporte: round2(reintegroMismoSigno),
+        ConceptoImporte: round2(reintegroConcepto),
         ConceptoImporteGravado: round2(acumulado.gravado),
         TasaImpositiva: config.tasa,
       });
@@ -320,12 +323,13 @@ function buildPedidos(rows, defaults = {}) {
         return sum + cant * precio;
       }, 0)
     );
-    const conceptosConSigno = buildConceptos(filas, comprobante);
+    const conceptosConSigno = buildConceptos(filas, comprobante, tipoComprobante);
     const totalConceptosConSigno = round2(
       conceptosConSigno.reduce(
         (sum, concepto) =>
           sum +
-          (concepto.ConceptoCodigo === CONFIG.CONCEPTO_IVA_21_DOCUMENTO_T
+          (concepto.ConceptoCodigo === CONFIG.CONCEPTO_IVA_21_DOCUMENTO_T &&
+          tipoComprobante !== 'FC'
             ? -concepto.ConceptoImporte
             : concepto.ConceptoImporte),
         0
