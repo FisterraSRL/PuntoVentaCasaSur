@@ -35,6 +35,7 @@ const CONFIG = {
   // Regla de tarjeta informada por el circuito de punto de venta.
   TARJETA: {
     CONDICION_PAGO: 'TC/TD',
+    OPERACION_BANCARIA_NOTA_CREDITO: 'RECPagoTC',
     CUENTA_DEFAULT: '13100',
     CUENTAS_POR_COMPROBANTE_ADICIONAL: {
       '9510 AMERICAN EXPRESS': '13103',
@@ -153,10 +154,10 @@ const round2 = (n) => {
   return signo * (Math.round((Math.abs(n) + Number.EPSILON) * 100) / 100);
 };
 
-/** En notas de credito invierte el signo informado por el Excel. */
+/** En notas de credito todos los importes propios del comprobante son positivos. */
 function ajustarImporteNotaCredito(valor, notaCredito) {
   if (valor == null || !notaCredito) return valor;
-  return round2(valor * -1);
+  return round2(Math.abs(valor));
 }
 
 /** Convierte "21%" o "10,5%" a una tasa numerica. */
@@ -345,9 +346,10 @@ function buildPedidos(rows, defaults = {}) {
     const totalBruto = ajustarImporteNotaCredito(totalBrutoConSigno, notaCredito);
     const totalConceptos = ajustarImporteNotaCredito(totalConceptosConSigno, notaCredito);
     const total = ajustarImporteNotaCredito(totalConSigno, notaCredito);
-    // Los arreglos de cobranza de las notas de credito siempre se informan
-    // con ImporteACobrar negativo, independientemente del signo de origen.
-    const importeCobro = notaCredito ? round2(-Math.abs(total)) : total;
+    // En las NC la cobranza es positiva y TotalPagos representa el crédito
+    // con signo negativo, independientemente del signo informado en el Excel.
+    const importeCobro = notaCredito ? round2(Math.abs(total)) : total;
+    const totalPagos = notaCredito ? round2(-Math.abs(total)) : total;
 
     const payload = cleanObject({
       IdentificacionExterna: comprobante ?? `PV-${numero}`,
@@ -412,7 +414,8 @@ function buildPedidos(rows, defaults = {}) {
       PuntoVentaItemsTarjeta: pagoTarjeta
         ? [
             {
-              OperacionBancariaCodigo: condicionPago,
+              OperacionBancariaCodigo:
+                notaCredito ? CONFIG.TARJETA.OPERACION_BANCARIA_NOTA_CREDITO : condicionPago,
               CuentaCodigo: cuentaPagoTarjeta,
               Descripcion: toStringOrNull(head.COMPROBANTEADICIONAL),
               FechaCupon: fechaPago,
@@ -452,7 +455,7 @@ function buildPedidos(rows, defaults = {}) {
       TotalConceptos: totalConceptos.toFixed(2),
       Total: total.toFixed(2),
       TotalRetenciones: '0.00',
-      TotalPagos: total.toFixed(2),
+      TotalPagos: totalPagos.toFixed(2),
     });
 
     pedidos.push({
