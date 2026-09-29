@@ -345,6 +345,9 @@ function buildPedidos(rows, defaults = {}) {
     const totalBruto = ajustarImporteNotaCredito(totalBrutoConSigno, notaCredito);
     const totalConceptos = ajustarImporteNotaCredito(totalConceptosConSigno, notaCredito);
     const total = ajustarImporteNotaCredito(totalConSigno, notaCredito);
+    // Los arreglos de cobranza de las notas de credito siempre se informan
+    // con ImporteACobrar negativo, independientemente del signo de origen.
+    const importeCobro = notaCredito ? round2(-Math.abs(total)) : total;
 
     const payload = cleanObject({
       IdentificacionExterna: comprobante ?? `PV-${numero}`,
@@ -397,7 +400,7 @@ function buildPedidos(rows, defaults = {}) {
         ? [
             {
               OperacionBancariaCodigo: CONFIG.BANCO.OPERACION_BANCARIA,
-              ImporteACobrar: total.toFixed(2),
+              ImporteACobrar: importeCobro.toFixed(2),
               MonedaCobroCodigo: CONFIG.BANCO.MONEDA_COBRO,
               NroCheque: toNumericCode(comprobante),
               FechaVencimientoCheque: fechaPago,
@@ -416,7 +419,7 @@ function buildPedidos(rows, defaults = {}) {
               FechaVencimientoTarjeta: fechaPago,
               DocumentoTitular: toStringOrNull(head.CLIENTE),
               NroCupon: toNumericCode(comprobante),
-              ImporteACobrar: total.toFixed(2),
+              ImporteACobrar: importeCobro.toFixed(2),
               MonedaCobroCodigo: moneda,
             },
           ]
@@ -424,7 +427,7 @@ function buildPedidos(rows, defaults = {}) {
       PuntoVentaItemsEfectivo: pagoContado
         ? [
             {
-              ImporteACobrar: total.toFixed(2),
+              ImporteACobrar: importeCobro.toFixed(2),
               MonedaCobroCodigo: moneda,
               CuentaCodigo: cuentaEfectivo,
             },
@@ -436,7 +439,7 @@ function buildPedidos(rows, defaults = {}) {
             {
               CuentaCodigo: CONFIG.CUENTA_PAGO_OTROS,
               DebeHaber: 1,
-              ImporteACobrar: total.toFixed(2),
+              ImporteACobrar: importeCobro.toFixed(2),
               MonedaCobroCodigo: moneda,
             },
           ],
