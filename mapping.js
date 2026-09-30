@@ -35,7 +35,6 @@ const CONFIG = {
   // Regla de tarjeta informada por el circuito de punto de venta.
   TARJETA: {
     CONDICION_PAGO: 'TC/TD',
-    OPERACION_BANCARIA_NOTA_CREDITO: 'RECPagoTC',
     CUENTA_DEFAULT: '13100',
     CUENTAS_POR_COMPROBANTE_ADICIONAL: {
       '9510 AMERICAN EXPRESS': '13103',
@@ -414,8 +413,7 @@ function buildPedidos(rows, defaults = {}) {
       PuntoVentaItemsTarjeta: pagoTarjeta
         ? [
             {
-              OperacionBancariaCodigo:
-                notaCredito ? CONFIG.TARJETA.OPERACION_BANCARIA_NOTA_CREDITO : condicionPago,
+              OperacionBancariaCodigo: condicionPago,
               CuentaCodigo: cuentaPagoTarjeta,
               Descripcion: toStringOrNull(head.COMPROBANTEADICIONAL),
               FechaCupon: fechaPago,
