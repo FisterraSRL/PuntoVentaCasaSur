@@ -35,11 +35,11 @@ const CONFIG = {
   // Regla de tarjeta informada por el circuito de punto de venta.
   TARJETA: {
     CONDICION_PAGO: 'TC/TD',
-    CUENTA_DEFAULT: '13100',
     CUENTAS_POR_COMPROBANTE_ADICIONAL: {
-      '9510 AMERICAN EXPRESS': '13103',
-      '9520 VISA': '13100',
-      '9530 MASTERCARD': '13102',
+      '9510': '13103',
+      '9520': '13100',
+      '9530': '13102',
+      '9580': '13102',
     },
   },
   EFECTIVO: {
@@ -117,10 +117,31 @@ function esPagoTarjeta(row) {
 
 function cuentaTarjeta(row) {
   const comprobanteAdicional = normalizeCode(row.COMPROBANTEADICIONAL);
+  const codigo = comprobanteAdicional?.match(/^(\d+)(?=\D|$)/)?.[1];
   return (
-    CONFIG.TARJETA.CUENTAS_POR_COMPROBANTE_ADICIONAL[comprobanteAdicional] ??
-    CONFIG.TARJETA.CUENTA_DEFAULT
+    CONFIG.TARJETA.CUENTAS_POR_COMPROBANTE_ADICIONAL[codigo] ??
+    null
   );
+}
+
+function errorTarjeta(value) {
+  if (toStringOrNull(value) == null) return 'El campo COMPROBANTEADICIONAL está vacío.';
+  if (!cuentaTarjeta({ COMPROBANTEADICIONAL: value })) {
+    return `El campo COMPROBANTEADICIONAL tiene un código no conocido: ${value}.`;
+  }
+  return null;
+}
+
+function validarPedido(pedido) {
+  if (pedido.errores?.length) return pedido.errores.join(' ');
+  for (const tarjeta of pedido.payload?.PuntoVentaItemsTarjeta || []) {
+    const error = errorTarjeta(tarjeta.Descripcion);
+    if (error) return error;
+    if (tarjeta.CuentaCodigo !== cuentaTarjeta({ COMPROBANTEADICIONAL: tarjeta.Descripcion })) {
+      return 'La cuenta de tarjeta no corresponde al código de COMPROBANTEADICIONAL. Volvé a analizar el archivo.';
+    }
+  }
+  return null;
 }
 
 function esPagoContado(row) {
@@ -308,6 +329,12 @@ function buildPedidos(rows, defaults = {}) {
     const notaCredito = tipoComprobante === 'NC';
     // Facturas y notas de credito generan la cobranza indicada en el Excel.
     const pagoTarjeta = esPagoTarjeta(head);
+    const errores = pagoTarjeta
+      ? filas.flatMap(({ row, excelRow }) => {
+          const error = errorTarjeta(row.COMPROBANTEADICIONAL);
+          return error ? [`Fila ${excelRow}: ${error}`] : [];
+        })
+      : [];
     const cuentaPagoTarjeta = cuentaTarjeta(head);
     const pagoContado = esPagoContado(head);
     const pagoBanco = esPagoBanco(head);
@@ -466,10 +493,11 @@ function buildPedidos(rows, defaults = {}) {
       items: filas.length,
       filasExcel: filas.map((f) => f.excelRow),
       total,
+      errores,
       payload,
     });
   }
   return pedidos;
 }
 
-module.exports = { parseRows, buildPedidos, cleanObject, toIsoDate, CONFIG };
+module.exports = { parseRows, buildPedidos, cleanObject, toIsoDate, CONFIG, validarPedido };

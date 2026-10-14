@@ -90,7 +90,7 @@ function renderPreview(data) {
   pedidos.forEach((p, i) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="checkbox" class="chk" data-i="${i}" checked /></td>
+      <td><input type="checkbox" class="chk" data-i="${i}" ${p.errores?.length ? 'disabled' : 'checked'} /></td>
       <td>${escapeHtml(p.numero)}</td>
       <td>${escapeHtml(p.comprobante ?? '—')}</td>
       <td>${escapeHtml(p.tipoComprobante ?? '—')}</td>
@@ -101,6 +101,7 @@ function renderPreview(data) {
       <td><button class="btn-link" data-json="${i}">Ver JSON</button></td>
       <td><span class="badge badge-pending" id="estado-${i}">Pendiente</span></td>`;
     tbody.appendChild(tr);
+    if (p.errores?.length) setEstado(i, 'err', p.errores.join(' '));
   });
 
   tbody.querySelectorAll('[data-json]').forEach((btn) =>
@@ -110,13 +111,16 @@ function renderPreview(data) {
   $('card-preview').classList.remove('hidden');
   $('card-result').classList.add('hidden');
   $('sendError').textContent = '';
+  const bloqueados = pedidos.filter((p) => p.errores?.length).length;
+  if (bloqueados) $('sendError').textContent = `${bloqueados} punto(s) de venta bloqueados por errores en COMPROBANTEADICIONAL. Corregí el archivo y volvé a analizarlo. Los demás se pueden enviar.`;
+  btnSend.disabled = bloqueados === pedidos.length;
   sendProgress.textContent = '';
   sendProgress.classList.add('hidden');
   $('card-preview').scrollIntoView({ behavior: 'smooth' });
 }
 
 $('checkAll').addEventListener('change', (e) => {
-  document.querySelectorAll('.chk').forEach((c) => (c.checked = e.target.checked));
+  document.querySelectorAll('.chk:not(:disabled)').forEach((c) => (c.checked = e.target.checked));
 });
 
 // ---------- Modal JSON ----------
@@ -135,7 +139,7 @@ $('jsonModal').addEventListener('click', (e) => {
 
 btnSend.addEventListener('click', async () => {
   const seleccion = [...document.querySelectorAll('.chk')]
-    .filter((c) => c.checked)
+    .filter((c) => c.checked && !c.disabled && !pedidos[Number(c.dataset.i)].errores?.length)
     .map((c) => Number(c.dataset.i));
   if (!seleccion.length) {
     $('sendError').textContent = 'Seleccioná al menos un punto de venta.';

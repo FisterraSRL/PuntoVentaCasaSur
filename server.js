@@ -2,7 +2,7 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const multer = require('multer');
-const { parseRows, buildPedidos } = require('./mapping');
+const { parseRows, buildPedidos, validarPedido } = require('./mapping');
 
 const PORT = process.env.PORT || 4600;
 const CLIENT_ID = process.env.FINNEGANS_CLIENT_ID;
@@ -79,7 +79,7 @@ app.post('/api/enviar', async (req, res) => {
 
   let token;
   try {
-    token = await getAccessToken();
+    if (pedidos.some((pedido) => !validarPedido(pedido))) token = await getAccessToken();
   } catch (err) {
     return res.status(502).json({ error: err.message });
   }
@@ -96,6 +96,8 @@ app.post('/api/enviar', async (req, res) => {
   for (const [indice, pedido] of pedidos.entries()) {
     const resultado = { numero: pedido.numero, comprobante: pedido.comprobante };
     try {
+      const errorValidacion = validarPedido(pedido);
+      if (errorValidacion) throw new Error(errorValidacion);
       const response = await fetch(`${PUNTO_VENTA_URL}?ACCESS_TOKEN=${encodeURIComponent(token)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -113,8 +115,8 @@ app.post('/api/enviar', async (req, res) => {
       resultado.respuesta = body;
     } catch (err) {
       resultado.ok = false;
-      resultado.status = 0;
-      resultado.respuesta = `Error de red: ${err.message}`;
+      resultado.status = validarPedido(pedido) ? 400 : 0;
+      resultado.respuesta = resultado.status === 400 ? err.message : `Error de red: ${err.message}`;
     }
     resultados.push(resultado);
     if (transmitirProgreso) {
